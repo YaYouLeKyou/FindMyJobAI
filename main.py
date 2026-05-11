@@ -9,15 +9,32 @@ import requests
 from bs4 import BeautifulSoup
 from jobspy import scrape_jobs
 import pandas as pd
+import time
+import concurrent.futures
 
 # --- CONFIGURATION INITIALE ---
-load_dotenv()
-api_key = os.getenv("GROQ_API_KEY")
-ft_client_id = os.getenv("FRANCE_TRAVAIL_CLIENT_ID")
-ft_client_secret = os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET")
+load_dotenv(override=True)  # Force le rechargement si le fichier .env change
+api_key = os.getenv("GROQ_API_KEY", "").strip()
+ft_client_id = os.getenv("FRANCE_TRAVAIL_CLIENT_ID", "").strip()
+ft_client_secret = os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET", "").strip()
+adzuna_app_id = os.getenv("ADZUNA_APP_ID")
+adzuna_app_key = os.getenv("ADZUNA_APP_KEY")
+serpapi_key = os.getenv("SERPAPI_KEY")
+jooble_api_key = os.getenv("JOOBLE_API_KEY")
+apify_api_key = os.getenv("APIFY_API_KEY")
 
 if not api_key:
     st.error("⚠️ Clé API GROQ non trouvée. Veuillez vérifier votre fichier .env")
+
+# Diagnostic de la clé Groq (Console)
+if api_key:
+    print(f"--- Diagnostic Groq ---")
+    print(f"Clé détectée : {api_key[:4]}...{api_key[-4:]}")
+    if not api_key.startswith("gsk_"):
+        print("❌ Format invalide : Une clé Groq doit commencer par 'gsk_'")
+else:
+    print("--- Diagnostic Groq ---")
+    print("❌ Aucune clé Groq détectée dans .env")
 
 client = Groq(api_key=api_key) if api_key else None
 
@@ -57,7 +74,7 @@ def analyze_cv(text):
     
     prompt = f"""
     Tu es un expert en recrutement. Analyse ce CV et retourne uniquement un objet JSON avec les clés suivantes :
-    "nom_complet", "contact", "metier", "mots_cles" (liste de chaînes), "resume" (maximum 3 lignes), "annees_experience" (nombre entier), "recommandations_metiers" (liste de 5 métiers suggérés), "metiers_alternatifs" (liste de 3 métiers radicalement différents utilisant les mêmes compétences transférables).
+    "nom_complet", "contact", "metier", "mots_cles" (liste de chaînes), "resume" (maximum 3 lignes), "annees_experience" (nombre entier), "recommandations_metiers" (liste de 5 métiers suggérés), "metiers_alternatifs" (liste de 3 métiers radicalement différents utilisant les mêmes compétences transférables), "suggestions_amelioration" (liste de 3 à 5 conseils concrets pour améliorer l'impact de ce CV).
 
     LOGIQUE D'IDENTIFICATION DU MÉTIER :
     - Si le profil contient des métiers multiples (ex: "Consultant & Développeur"), NE les regroupe PAS.
@@ -84,7 +101,10 @@ def analyze_cv(text):
         st.error(f"L'IA n'a pas renvoyé un JSON valide : {je}")
         return None
     except Exception as e:
-        st.error(f"Détails de l'erreur API : {str(e)}")
+        if "401" in str(e):
+            st.error("🔑 **Erreur d'authentification** : Votre clé `GROQ_API_KEY` est invalide. Vérifiez qu'elle est correcte dans votre fichier `.env` et qu'il s'agit bien d'une clé Groq (et non Gemini).")
+        else:
+            st.error(f"❌ **Erreur API Groq** : {str(e)}")
         return None
 
 def generate_cover_letter(cv_data, job_title, company, job_description=""):
@@ -119,19 +139,34 @@ def generate_cover_letter(cv_data, job_title, company, job_description=""):
         )
         return completion.choices[0].message.content
     except Exception as e:
-        st.error(f"Erreur lors de la génération de la lettre : {e}")
+        if "401" in str(e):
+            st.error("🔑 **Erreur d'authentification** : Clé API Groq invalide lors de la génération de la lettre.")
+        else:
+            st.error(f"❌ **Erreur lors de la génération de la lettre** : {e}")
         return None
 
 def generate_job_search_links(job_title, keywords):
     """Génère des URLs de recherche pour différentes plateformes."""
-    query = f"{job_title} {' '.join(keywords[:3])}"  # On prend le métier + les 3 premiers mots-clés
+    query = job_title
     encoded_query = urllib.parse.quote(query)
     
     return {
-        "Indeed": f"https://fr.indeed.com/jobs?q={encoded_query}",
-        "France Travail": f"https://candidat.pole-emploi.fr/offres/recherche?motsCles={encoded_query}",
-        "LinkedIn": f"https://www.linkedin.com/jobs/search/?keywords={encoded_query}",
-        "Welcome to the Jungle": f"https://www.welcometothejungle.com/fr/jobs?query={encoded_query}"
+        "Welcome to the Jungle": f"https://www.welcometothejungle.com/fr/jobs?query={encoded_query}",
+        "HelloWork": f"https://www.hellowork.com/fr-fr/emploi/recherche.html?k={encoded_query}",
+        "Meteojob": f"https://www.meteojob.com/jobsearch/search?what={encoded_query}",
+        "Jobijoba": f"https://www.jobijoba.com/fr/recherche?q={encoded_query}",
+        "Service Public (FR)": f"https://www.choisirleservicepublic.gouv.fr/nos-offres/filtres/mots-cles/{encoded_query}/",
+        "We Work Remotely (Global)": f"https://weworkremotely.com/remote-jobs/search?term={encoded_query}",
+        "Remote OK (Global)": f"https://remoteok.com/remote-{encoded_query.replace('%20', '-')}-jobs",
+        "Working Nomads (Global)": f"https://www.workingnomads.com/remote-jobs?search={encoded_query}",
+        "Remotive (Global)": f"https://remotive.com/remote-jobs?search={encoded_query}",
+        "EuroJobs (Europe)": f"https://www.eurojobs.com/index.php?job_title={encoded_query}&location=",
+        "Indeed (USA)": f"https://www.indeed.com/jobs?q={encoded_query}",
+        "Indeed (UK)": f"https://uk.indeed.com/jobs?q={encoded_query}",
+        "Indeed (Canada)": f"https://ca.indeed.com/jobs?q={encoded_query}",
+        "StepStone (Allemagne)": f"https://www.stepstone.de/jobs/{encoded_query.replace('%20', '-')}",
+        "Seek (Australie)": f"https://www.seek.com.au/{encoded_query.replace('%20', '-')}-jobs",
+        "Idealist (Impact)": f"https://www.idealist.org/en/jobs?q={encoded_query}"
     }
 
 def scrape_france_travail_jobs(job_title, limit=10):
@@ -141,95 +176,141 @@ def scrape_france_travail_jobs(job_title, limit=10):
     clean_title = clean_title.split(',')[0].split('(')[0].split('-')[0].strip()
     
     query = urllib.parse.quote(clean_title)
-    url = f"https://candidat.pole-emploi.fr/offres/recherche?motsCles={query}&offresPartenaires=true"
-    
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
     
+    jobs = []
+    page = 1
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        jobs = []
-        
-        # Recherche plus large de balises de résultats
-        items = soup.find_all(['li', 'div'], class_=['result', 'offre'])
-        
-        for item in items[:limit]:
-            title_elem = item.find(['h2', 'h3', 'a'])
-            company_elem = item.find(['p', 'span'], class_=['sub-text', 'media-heading-text', 'nom-entreprise'])
-            link_elem = item.find('a', href=True)
+        session = requests.Session()
+        while len(jobs) < limit and page <= 5:
+            url = f"https://candidat.pole-emploi.fr/offres/recherche?motsCles={query}&offresPartenaires=true&page={page}&sort=1"
+            response = session.get(url, headers=headers, timeout=10)
+            if response.status_code != 200: break
             
-            if title_elem and link_elem:
-                jobs.append({
-                    "titre": title_elem.get_text(strip=True),
-                    "entreprise": company_elem.get_text(strip=True) if company_elem else "Entreprise non précisée",
-                    "lien": "https://candidat.pole-emploi.fr" + link_elem['href']
-                })
+            soup = BeautifulSoup(response.text, 'html.parser')
+            items = soup.select('li.result-resumes-item, article.offre, li[data-id-offre]')
+            
+            if not items:
+                items = soup.select('div[class*="offre"], article.result, .media-body')
+            
+            if not items: break
+
+            for item in items:
+                if len(jobs) >= limit: break
+                title_elem = item.select_one('h2.media-heading, .t4, .t5, a.titre, .media-heading')
+                company_elem = item.select_one('p.sub-text, .nom-entreprise, span.entreprise')
+                link_elem = item.select_one('a[href*="detail"], a.btn-detail-offre')
+                
+                if title_elem:
+                    href = link_elem['href'] if link_elem else "#"
+                    jobs.append({
+                        "titre": title_elem.get_text(strip=True),
+                        "entreprise": company_elem.get_text(strip=True) if company_elem else "Entreprise non précisée",
+                        "lien": "https://candidat.pole-emploi.fr" + href if href.startswith('/') else href
+                    })
+            page += 1
         return jobs
     except Exception as e:
-        st.error(f"Erreur lors du scraping France Travail : {e}")
-        return []
+        return jobs
 
-def chercher_offres_jobspy(metier, contrat_label, remote_only, location="France", num_results=5, experience=None):
+def chercher_offres_jobspy(metier, contrat_label, remote_only, location="France, FR", num_results=5, experience=None):
     """Recherche des offres via JobSpy sur plusieurs plateformes."""
     # Mapping des types de contrat pour JobSpy
     job_type_map = {"CDI": "fulltime", "CDD": "contract", "Interim": "temporary"}
     
-    search_term = f"{metier} {experience} ans d'expérience" if experience else metier
     clean_metier = clean_job_title(metier)
     if not clean_metier:
         clean_metier = metier
 
-    # Essai sur plusieurs sites un par un pour éviter les blocages globaux
-    sites_to_try = ["indeed", "linkedin"]
-    all_jobs = pd.DataFrame()
+    # Sites à scanner (Indeed et LinkedIn sont les plus fiables en France)
+    sites_to_try = ["indeed", "linkedin", "google", "glassdoor", "zip_recruiter", "simplyhired", "careerbuilder", "monster"]
+    all_results = pd.DataFrame()
 
-    try:
-        # Tentative 1 : Avec filtres
-        for site in sites_to_try:
-            res = scrape_jobs(
-                site_name=[site],
-                search_term=f"{clean_metier} {experience} ans" if experience else clean_metier,
-                location=location,
-                results_wanted=num_results,
-                hours_old=720,
-                job_type=job_type_map.get(contrat_label),
-                is_remote=remote_only
-            )
-            if not res.empty:
-                all_jobs = pd.concat([all_jobs, res], ignore_index=True)
+    for site in sites_to_try:
+        try:
+            time.sleep(1)  # Délai pour réduire les risques de bannissement IP
+            search_location = location if location else "France"
+            
+            # Configuration de base
+            search_params = {
+                "site_name": [site],
+                "search_term": clean_metier,
+                "location": search_location,
+                "results_wanted": num_results,
+                "hours_old": 720,
+                "job_type": job_type_map.get(contrat_label),
+                "is_remote": remote_only,
+                "enforce_desktop": True
+            }
+
+            if site == "indeed":
+                search_params["country_indeed"] = "france"
+            elif site == "linkedin":
+                search_params["linkedin_fetch_full_description"] = False
+                if "," in search_location: search_params["location"] = search_location.split(",")[0]
+            elif site in ["google", "glassdoor", "zip_recruiter", "simplyhired"]:
+                # Ces sites préfèrent souvent "France" tout court plutôt que "France, FR"
+                if "France" in search_location: search_params["location"] = "France"
+            
+            results = scrape_jobs(**search_params)
+            
+            # Fallback 1 : On retire le filtre de type de contrat
+            if (results is None or results.empty) and "job_type" in search_params:
+                search_params.pop("job_type")
+                results = scrape_jobs(**search_params)
+            
+            # Fallback 2 : On retire la limite temporelle
+            if (results is None or results.empty) and "hours_old" in search_params:
+                search_params.pop("hours_old")
+                results = scrape_jobs(**search_params)
+
+            # Fallback 3 : Recherche ultra-simplifiée (Titre brut)
+            if (results is None or results.empty):
+                search_params["search_term"] = metier # On utilise le titre non nettoyé
+                # On garde results_wanted tel quel pour avoir un maximum de retours
+                results = scrape_jobs(**search_params)
+
+            if results is not None and not results.empty:
+                all_results = pd.concat([all_results, results], ignore_index=True)
+                
+            # On continue la boucle pour interroger toutes les sources et remplir le dashboard, 
+            # sauf si on a vraiment un volume massif d'offres (ex: 3x le demandé)
+            if len(all_results) >= num_results * 3:
+                break
+
+        except Exception:
+            # On ignore l'erreur spécifique à un site pour ne pas bloquer les autres
+            continue
+            
+    if all_results.empty:
+        st.info("💡 Note : Les plateformes externes (LinkedIn, Indeed...) bloquent souvent les requêtes automatiques. Privilégiez France Travail ou les liens d'accès direct.")
         
-        # Tentative 2 : Sans filtres (si toujours rien)
-        if all_jobs.empty:
-            all_jobs = scrape_jobs(
-                site_name=["indeed"],
-                search_term=clean_metier,
-                location=location,
-                results_wanted=num_results,
-                hours_old=720
-            )
-        return all_jobs
-    except Exception as e:
-        return pd.DataFrame()
+    return all_results
 
-@st.cache_data(ttl=1400)  # Le token dure environ 25 minutes
 def get_france_travail_token():
     """Récupère le token OAuth2 pour l'API France Travail."""
-    auth_url = "https://entreprise.pole-emploi.fr/connexion/oauth2/access_token?realm=/partenaire"
+    if not ft_client_id or not ft_client_secret:
+        return None
+
+    auth_url = "https://entreprise.pole-emploi.fr/connexion/oauth2/access_token"
+    params = {"realm": "/partenaire"}
     data = {
         "grant_type": "client_credentials",
         "client_id": ft_client_id,
         "client_secret": ft_client_secret,
-        "scope": "api_offresdemploiv2 o2dso"
+        "scope": "api_offresdemploiv2" # Simplifié pour éviter les erreurs si o2dso n'est pas activé
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     try:
-        response = requests.post(auth_url, data=data, headers=headers)
-        response.raise_for_status()
+        response = requests.post(auth_url, params=params, data=data, headers=headers, timeout=10)
+        if response.status_code != 200:
+            print(f"Détails erreur France Travail : {response.text}")
+            return None
         return response.json().get("access_token")
     except Exception as e:
-        st.error(f"Erreur d'authentification France Travail : {e}")
+        print(f"Erreur France Travail Auth: {e}")
         return None
 
 def get_france_travail_jobs_api(job_title, limit=10):
@@ -261,8 +342,143 @@ def get_france_travail_jobs_api(job_title, limit=10):
             })
         return jobs
     except Exception as e:
-        st.error(f"Erreur API France Travail : {e}")
+        st.error(f"Erreur lors de l'appel API France Travail : {e}")
         return []
+
+def get_adzuna_jobs(job_title, location="France", limit=10):
+    """Récupère des offres via l'API Adzuna (Stable et structuré)."""
+    if not adzuna_app_id or not adzuna_app_key:
+        return []
+    
+    url = f"https://api.adzuna.com/v1/api/jobs/fr/search/1"
+    params = {
+        "app_id": adzuna_app_id,
+        "app_key": adzuna_app_key,
+        "results_per_page": limit,
+        "what": job_title,
+        "where": location,
+        "content-type": "application/json"
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        results = response.json().get("results", [])
+        return [{
+            "titre": res.get("title"),
+            "entreprise": res.get("company", {}).get("display_name", "N/C"),
+            "lien": res.get("redirect_url"),
+            "source": "Adzuna"
+        } for res in results]
+    except Exception:
+        return []
+
+def get_serpapi_jobs(job_title, location="France", limit=10):
+    """Récupère des offres via SerpApi (Google Jobs)."""
+    if not serpapi_key:
+        return []
+    
+    url = "https://serpapi.com/search"
+    params = {
+        "engine": "google_jobs",
+        "q": job_title,
+        "location": location,
+        "hl": "fr",
+        "api_key": serpapi_key
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        results = data.get("jobs_results", [])
+        return [{
+            "titre": res.get("title"),
+            "entreprise": res.get("company_name", "N/C"),
+            "lien": res.get("related_links", [{}])[0].get("link") if res.get("related_links") else "#",
+            "source": "Google Jobs"
+        } for res in results[:limit]]
+    except Exception:
+        return []
+
+def get_jooble_jobs(job_title, location="France", limit=10):
+    """Récupère des offres via l'API Jooble."""
+    if not jooble_api_key:
+        return []
+    
+    url = f"https://jooble.org/api/{jooble_api_key}"
+    try:
+        response = requests.post(url, json={"keywords": job_title, "location": location}, timeout=10)
+        response.raise_for_status()
+        results = response.json().get("jobs", [])
+        return [{
+            "titre": BeautifulSoup(res.get("title", ""), "html.parser").get_text(),
+            "entreprise": res.get("company", "N/C"),
+            "lien": res.get("link"),
+            "source": "Jooble"
+        } for res in results[:limit]]
+    except Exception:
+        return []
+
+def get_apify_jobs(job_title, location="France", limit=10):
+    """Récupère des offres via Apify (LinkedIn Scraper)."""
+    if not apify_api_key:
+        return []
+    
+    # Exemple utilisant l'acteur apify/linkedin-jobs-scraper
+    url = "https://api.apify.com/v2/acts/apify~linkedin-jobs-scraper/run-sync-get-dataset-items"
+    params = {"token": apify_api_key}
+    payload = {
+        "searchKeywords": job_title,
+        "location": location,
+        "maxItems": limit,
+    }
+    try:
+        response = requests.post(url, params=params, json=payload, timeout=30)
+        results = response.json()
+        return [{
+            "titre": res.get("title"),
+            "entreprise": res.get("companyName", "N/C"),
+            "lien": res.get("url"),
+            "source": "LinkedIn (Apify)"
+        } for res in results]
+    except Exception:
+        return []
+
+def display_api_jobs(job_list, source_name):
+    """Affiche une liste d'offres formatée avec option de lettre de motivation."""
+    if not job_list:
+        return
+    
+    st.subheader(f"✨ Offres {source_name}")
+    # On crée un tag propre à partir du nom de la source
+    source_tag = "".join(filter(str.isalnum, source_name)).lower()
+    for i, ad in enumerate(job_list):
+        job_id = f"{source_tag}_{i}_{hash(ad['lien'])}"
+        with st.container(border=True):
+            st.markdown(f"### {ad['titre']}")
+            st.markdown(f"🏢 **{ad['entreprise']}**")
+            
+            btn_c1, btn_c2 = st.columns(2)
+            with btn_c1:
+                st.link_button("🌐 Voir l'offre", ad['lien'], use_container_width=True)
+            with btn_c2:
+                expander = st.expander("📝 Lettre")
+            
+            with expander:
+                if 'user_cv_data' not in st.session_state:
+                    st.warning("Veuillez d'abord uploader votre CV.")
+                else:
+                    letter_key = f"letter_{job_id}"
+                    if st.button(f"Générer la lettre (IA)", key=f"btn_{job_id}"):
+                        with st.spinner("Rédaction en cours..."):
+                            letter = generate_cover_letter(st.session_state['user_cv_data'], ad['titre'], ad['entreprise'], "")
+                            if letter:
+                                st.session_state[letter_key] = letter
+                    
+                    if letter_key in st.session_state:
+                        st.text_area("Votre lettre personnalisée :", value=st.session_state[letter_key], height=400, key=f"area_{job_id}")
+                        st.download_button("Télécharger la lettre (.txt)", st.session_state[letter_key], file_name=f"lettre_{ad['entreprise']}.txt", key=f"dl_{job_id}")
 
 # --- INTERFACE STREAMLIT ---
 st.set_page_config(page_title="Find me a job AI", page_icon="🚀", layout="centered")
@@ -322,6 +538,8 @@ if uploaded_file is not None:
             if cv_text:
                 data = analyze_cv(cv_text)
                 if data:
+                    print("--- Données brutes de l'analyse CV ---")
+                    print(json.dumps(data, indent=2, ensure_ascii=False))
                     st.session_state['user_cv_data'] = data
                     st.session_state['search_query'] = clean_job_title(data.get("metier", ""))
                     st.session_state['last_processed_file'] = file_id
@@ -348,6 +566,12 @@ if 'user_cv_data' in st.session_state:
         st.info(data.get("resume", "Pas de résumé disponible."))
         keywords = data.get("mots_cles", [])
         st.write(" ".join([f"`{kw}`" for kw in keywords]))
+        
+        if data.get("suggestions_amelioration"):
+            st.markdown("---")
+            st.markdown("✨ **Conseils d'amélioration**")
+            for suggestion in data["suggestions_amelioration"]:
+                st.markdown(f"📍 {suggestion}")
 
     with col_pistes:
         st.subheader("💡 Pistes d'évolution")
@@ -365,10 +589,6 @@ if 'user_cv_data' in st.session_state:
                 st.session_state['trigger_search'] = True
                 st.rerun()
 
-    st.divider()
-    with st.expander("Voir les données brutes"):
-        st.json(data)
-
 # --- SECTION DE RECHERCHE D'OFFRES ---
 st.divider()
 st.subheader("🔍 Recherche d'opportunités")
@@ -383,15 +603,19 @@ if 'user_cv_data' in st.session_state:
     # On crée une liste unique en gardant l'ordre
     search_options = list(dict.fromkeys([primary] + recos))
 
+if search_options:
+    st.caption("✨ Suggestions basées sur votre profil (cliquez pour remplir) :")
+    # Affichage des suggestions sous forme de boutons rapides (chips)
+    sugg_cols = st.columns(min(len(search_options), 4))
+    for i, opt in enumerate(search_options[:4]):
+        if sugg_cols[i].button(opt, key=f"chip_{i}", use_container_width=True):
+            st.session_state['search_query'] = opt
+            st.rerun()
+
 col_input, col_btn = st.columns([2, 1])
 with col_input:
-    if search_options:
-        manual_query = st.selectbox("Métier cible :", 
-                                    options=search_options, 
-                                    index=search_options.index(st.session_state['search_query']) if st.session_state['search_query'] in search_options else 0,
-                                    label_visibility="collapsed")
-    else:
-        manual_query = st.text_input("Métier recherché :", value=st.session_state['search_query'], label_visibility="collapsed")
+    # Utilisation systématique de text_input pour permettre la saisie manuelle libre
+    manual_query = st.text_input("Métier recherché :", value=st.session_state['search_query'], placeholder="Ex: Développeur Python, Serveur...", label_visibility="collapsed")
 
 with col_btn:
     launch_search = st.button("🚀 Rechercher", use_container_width=True)
@@ -408,28 +632,127 @@ if 'job_ads_ft' not in st.session_state:
     st.session_state['job_ads_ft'] = None
 
 if launch_search and manual_query:
-    with st.spinner(f"Recherche en cours pour '{manual_query}'..."):
-        # On récupère l'expérience extraite si elle existe
+    # On mémorise la requête manuelle dans le state pour qu'elle persiste au rechargement
+    st.session_state['search_query'] = manual_query
+    with st.spinner(f"Scan global des plateformes en cours..."):
         exp_val = st.session_state.get('user_cv_data', {}).get('annees_experience')
+        ville_search = ville if ville else "France"
+
+        # Utilisation du multi-threading pour accélérer la recherche
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # On prépare les appels
+            future_jobspy = executor.submit(chercher_offres_jobspy, manual_query, contrat, remote, ville_search, num_ads, exp_val)
+            future_adzuna = executor.submit(get_adzuna_jobs, manual_query, ville_search, num_ads)
+            future_serpapi = executor.submit(get_serpapi_jobs, manual_query, ville_search, num_ads)
+            future_jooble = executor.submit(get_jooble_jobs, manual_query, ville_search, num_ads)
+            future_apify = executor.submit(get_apify_jobs, manual_query, ville_search, num_ads)
+            
+            # Récupération des résultats JobSpy
+            st.session_state['offres'] = future_jobspy.result()
+            
+            # Récupération des APIs
+            st.session_state['job_ads_adzuna'] = future_adzuna.result()
+            st.session_state['job_ads_serpapi'] = future_serpapi.result()
+            st.session_state['job_ads_jooble'] = future_jooble.result()
+            st.session_state['job_ads_apify'] = future_apify.result()
         
-        offres = chercher_offres_jobspy(manual_query, contrat, remote, location=ville, num_results=num_ads, experience=exp_val)
-        st.session_state['offres'] = offres
-        if offres.empty:
+        # Cas particulier France Travail (gestion Token)
+        st.session_state['job_ads_ft'] = []
+        if ft_client_id and ft_client_secret:
+            st.session_state['job_ads_ft'] = get_france_travail_jobs_api(manual_query, limit=num_ads)
+        
+        if not st.session_state['job_ads_ft']:
             st.session_state['job_ads_ft'] = scrape_france_travail_jobs(manual_query, limit=num_ads)
+
+# --- TABLEAU DE BORD DES SOURCES ---
+if st.session_state['offres'] is not None or st.session_state['job_ads_ft'] is not None:
+    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📊 État du Scan Global (Résultats intégrés)")
+    
+    # Extraction des statistiques
+    js_df = st.session_state['offres']
+    js_counts = js_df['site'].value_counts().to_dict() if js_df is not None and not js_df.empty else {}
+    ft_count = len(st.session_state['job_ads_ft']) if st.session_state['job_ads_ft'] else 0
+    adzuna_count = len(st.session_state.get('job_ads_adzuna', []))
+    serpapi_count = len(st.session_state.get('job_ads_serpapi', []))
+    jooble_count = len(st.session_state.get('job_ads_jooble', []))
+    apify_count = len(st.session_state.get('job_ads_apify', []))
+    
+    # Configuration des sources à afficher
+    source_list = [
+        ("linkedin", "LinkedIn"),
+        ("indeed", "Indeed"),
+        ("glassdoor", "Glassdoor"),
+        ("google", "Google Jobs"),
+        ("zip_recruiter", "ZipRecruiter"),
+        ("simplyhired", "SimplyHired"),
+        ("careerbuilder", "CareerBuilder"),
+        ("monster", "Monster"),
+        ("france_travail", "FT / Pôle Emploi"),
+        ("adzuna", "Adzuna (Premium)"),
+        ("serpapi", "Google Jobs (Serp)"),
+        ("jooble", "Jooble API"),
+        ("apify", "LinkedIn (Apify)")
+    ]
+    
+    # Filtrage des sources avec résultats et log console pour les autres
+    active_sources = []
+    for key, label in source_list:
+        if key == "france_travail":
+            count = ft_count
+        elif key == "adzuna":
+            count = adzuna_count
+        elif key == "serpapi":
+            count = serpapi_count
+        elif key == "jooble":
+            count = jooble_count
+        elif key == "apify":
+            count = apify_count
         else:
-            st.session_state['job_ads_ft'] = None
+            count = js_counts.get(key, 0)
+        
+        if count > 0:
+            active_sources.append((label, count))
+        else:
+            print(f"🔍 [Console Scan] Aucun résultat trouvé pour : {label}")
+
+    # Affichage en grille des sources actives uniquement
+    rows = [active_sources[i:i + 4] for i in range(0, len(active_sources), 4)]
+    for row in rows:
+        status_cols = st.columns(len(row))
+        for idx, (label, count) in enumerate(row):
+            status_cols[idx].markdown(f"""
+                <div style="text-align:center; padding:8px; border-radius:8px; background-color:#d4edda; border:1px solid rgba(0,0,0,0.1); margin-bottom:5px;">
+                    <small style="font-size:0.75rem;">{label}</small><br><b>✅ {count}</b>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # --- NOUVELLE SECTION : ACCÈS DIRECT ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("🚀 Accès Direct (Autres plateformes)")
+    st.caption("Ces plateformes protègent leurs données contre l'IA, mais nous avons optimisé vos liens de recherche pour un accès rapide :")
+    
+    links = generate_job_search_links(manual_query, [])
+    link_rows = [list(links.items())[i:i + 3] for i in range(0, len(links), 3)]
+    for row in link_rows:
+        cols = st.columns(len(row))
+        for i, (name, url) in enumerate(row):
+            cols[i].link_button(f"🔍 {name}", url, use_container_width=True)
 
 # Affichage des résultats (en dehors du bloc 'if launch_search')
 if st.session_state['offres'] is not None and not st.session_state['offres'].empty:
     offres = st.session_state['offres']
-    st.success(f"{len(offres)} offres trouvées sur Indeed/LinkedIn/Glassdoor")
-    
-    for _, row in offres.iterrows():
-        job_id = f"job_{row.get('id', row.get('job_url'))}"
+    st.success(f"{len(offres)} offres trouvées via le scanner multi-plateformes")
+
+    for i, (_, row) in enumerate(offres.iterrows()):
+        # On ajoute un préfixe 'js' et l'index pour éviter les collisions avec les APIs
+        job_id = f"js_{i}_{row.get('id', row.get('job_url'))}"
         with st.container(border=True):
             st.markdown(f"### {row.get('title', 'Poste sans titre')}")
             st.markdown(f"🏢 **{row.get('company', 'Entreprise inconnue')}**")
             st.markdown(f"📍 {row.get('location', 'Lieu non précisé')}")
+            st.caption(f"🏷️ Source : **{row.get('site', 'Plateforme').capitalize()}**")
 
             btn_c1, btn_c2 = st.columns(2)
             with btn_c1:
@@ -453,10 +776,14 @@ if st.session_state['offres'] is not None and not st.session_state['offres'].emp
                         st.text_area("Votre lettre personnalisée :", value=st.session_state[letter_key], height=400, key=f"area_{job_id}")
                         st.download_button("Télécharger la lettre (.txt)", st.session_state[letter_key], file_name=f"lettre_{row.get('company', 'entreprise')}.txt", key=f"dl_{job_id}")
 
-elif st.session_state['job_ads_ft'] is not None:
-    for ad in st.session_state['job_ads_ft']:
-        with st.container(border=True):
-            st.markdown(f"**{ad['titre']}** @ {ad['entreprise']}")
-            st.link_button("Voir l'offre", ad['lien'])
+# Affichage des offres via API (Plus stables)
+display_api_jobs(st.session_state.get('job_ads_serpapi'), "Google Jobs (SerpApi)")
+display_api_jobs(st.session_state.get('job_ads_jooble'), "Jooble")
+display_api_jobs(st.session_state.get('job_ads_adzuna'), "Adzuna")
+display_api_jobs(st.session_state.get('job_ads_ft'), "France Travail")
+
+# Message d'alerte si rien n'est trouvé après une recherche
+if st.session_state['offres'] is not None and st.session_state['offres'].empty and not st.session_state.get('job_ads_ft'):
+    st.warning("⚠️ Aucune offre trouvée. Essayez de simplifier l'intitulé du métier ou de changer la ville.")
 
 st.caption("Propulsé par Streamlit, Groq & Llama 3")

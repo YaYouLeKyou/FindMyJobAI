@@ -16,7 +16,15 @@ An intelligent job search assistant that analyzes your CV, suggests career paths
 
 ## 🌍 Deployment (Streamlit Cloud)
 
-1. Push this code to a **GitHub** repository.
+1. Initialize and push this code to a **GitHub** repository:
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git remote add origin git@github.com:YaYouLeKyou/agentAI-find-a-job.git
+   git pull origin main --allow-unrelated-histories
+   git push -u origin main
+   ```
 2. Go to share.streamlit.io.
 3. Connect your GitHub account and select this repository.
 4. **Important**: Go to "Settings" -> "Secrets" and paste the content of your `.env` file there.
