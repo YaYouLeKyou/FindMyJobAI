@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from groq import Groq
 import PyPDF2
 import json
@@ -168,7 +167,10 @@ def reverse_geocoding(lat, lon):
             city = addr.get("city") or addr.get("town") or addr.get("village")
             country = addr.get("country")
             if city and country:
-                return f"{city}, {country}"
+                res = f"{city}, {country}"
+                logger.info(f"📍 GPS Géocodage réussi : {res}")
+                return res
+        logger.warning(f"📍 GPS Géocodage échoué (Code {response.status_code})")
     except:
         return None
 
@@ -810,18 +812,32 @@ with st.sidebar:
     # Get current strings for UI
     S = STRINGS[st.session_state['lang_code']]
 
-    st.header(S['settings'])
-    
-    num_ads = st.slider(S['num_ads'], min_value=1, max_value=50, value=10)
-    contrat = st.selectbox(S['contract'], ["CDI", "CDD", "Interim"])
+    # --- LOGIQUE DE GÉOLOCALISATION : DÉTECTION ET INITIALISATION ---
+    # 1. Vérification des coordonnées GPS dans l'URL (Priorité haute)
+    q_params = st.query_params
+    if "lat" in q_params and "lon" in q_params:
+        lat, lon = q_params["lat"], q_params["lon"]
+        logger.info(f"📍 Coordonnées GPS détectées dans l'URL : {lat}, {lon}")
+        precise_loc = reverse_geocoding(lat, lon)
+        if precise_loc:
+            st.session_state['user_location'] = precise_loc
+        # Nettoyage immédiat pour éviter les boucles infinies sur Nominatim
+        st.query_params.clear()
+        st.rerun()
 
-    # Initialisation de la localisation : Paris par défaut, puis tentative de géo-détection
-    # Initialisation de la localisation
+    # 2. Initialisation par défaut ou IP (si premier lancement)
     if 'user_location' not in st.session_state:
         detected_loc = get_geolocation()
         st.session_state['user_location'] = detected_loc if detected_loc else lang_data['default_loc']
+        logger.info(f"📍 Localisation initiale définie : {st.session_state['user_location']}")
 
+    st.header(S['settings'])
+
+    # --- Rendu des Filtres ---
+    num_ads = st.slider(S['num_ads'], min_value=1, max_value=50, value=10)
+    contrat = st.selectbox(S['contract'], ["CDI", "CDD", "Interim"])
     remote = st.checkbox(S['remote'])
+    
     global_search = False
     if remote:
         global_search = st.checkbox(S['global_search'], value=False)
@@ -833,47 +849,6 @@ with st.sidebar:
         ville = st.text_input(S['location'], value=st.session_state['user_location'])
         st.session_state['user_location'] = ville
         
-        # Boutons de géolocalisation sous le champ Ville
-        c_gps, c_ip = st.columns(2)
-        with c_gps:
-            if st.button("🎯 GPS", help="Position exacte via navigateur", use_container_width=True):
-                # Script JS amélioré avec gestion des erreurs et feedback utilisateur
-                components.html("""
-                    <script>
-                    navigator.geolocation.getCurrentPosition(function(position) {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('lat', lat);
-                        url.searchParams.set('lon', lon);
-                        window.parent.location.href = url.href;
-                    }, function(error) {
-                        if (error.code == 1) {
-                            alert("📍 Accès GPS refusé. Veuillez autoriser la géolocalisation dans les paramètres de votre navigateur.");
-                        } else {
-                            alert("📍 Erreur GPS : " + error.message);
-                        }
-                    });
-                    </script>
-                """, height=0)
-        with c_ip:
-            if st.button("📍 IP", key="refresh_loc", help="Position approximative via IP", use_container_width=True):
-                new_loc = get_geolocation()
-                if new_loc:
-                    st.session_state['user_location'] = new_loc
-                    st.rerun()
-
-    # Vérification des coordonnées GPS dans l'URL
-    query_params = st.query_params
-    if "lat" in query_params and "lon" in query_params:
-        lat, lon = query_params["lat"], query_params["lon"]
-        precise_loc = reverse_geocoding(lat, lon)
-        if precise_loc:
-            st.session_state['user_location'] = precise_loc
-            # On nettoie les paramètres d'URL pour éviter de re-solliciter Nominatim inutilement
-            st.query_params.clear()
-            st.rerun()
-
     st.divider()
     sort_option = st.selectbox(S['sort_by'], [S['sort_relevant'], S['sort_recent'], S['sort_closest']])
 
