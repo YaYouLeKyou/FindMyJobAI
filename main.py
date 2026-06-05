@@ -297,13 +297,13 @@ def call_ai_provider(prompt, selected_model, is_json=False):
                     text = json_match.group(1)
                 
             return text
-        elif "(Local)" in selected_model:
+        elif "(Local/dev)" in selected_model:
             # Mapping des noms d'affichage vers les tags Ollama
             # Simplification du mapping local
             model_map = {
-                "Llama 3.2 Vision (Local)": "llama3.2-vision",
-                "Llama 3.2 (Local)": "llama3.2",
-                "Qwen 3 4B (Local)": "qwen3:4b"
+                "Llama 3.2 Vision (Local/dev)": "llama3.2-vision",
+                "Llama 3.2 (Local/dev)": "llama3.2",
+                "Qwen 3 4B (Local/dev)": "qwen3:4b"
             }
             ollama_model = model_map.get(selected_model, "llama3.2")
             return call_local_llama(prompt, ollama_model, is_json=is_json)
@@ -967,35 +967,22 @@ with st.sidebar:
 
     st.header(S['settings'])
 
-    # --- DOUBLE SÉLECTION DE L'IA ---
-    st.subheader("🤖 Configuration IA")
-    
-    # Indicateur de statut Ollama
+    # --- LOGIQUE DE STATUT IA (CONSOLE) ---
     if is_ollama_online():
         ver = get_ollama_version()
-        if ver:
-            st.success(f"🟢 Ollama est en ligne (v{ver})", icon="✅")
-            # Vérification de compatibilité pour Llama 3.2 Vision (nécessite 0.3.10+)
-            try:
-                v_parts = [int(p) for p in ver.split('.')]
-                if v_parts[0] == 0 and (v_parts[1] < 3 or (v_parts[1] == 3 and v_parts[2] < 10)):
-                    st.warning(f"⚠️ v{ver} détectée : Llama 3.2 **Vision** nécessite la v0.3.10+. Utilisez la version texte ou mettez à jour Ollama.")
-            except:
-                pass
-        else:
-            st.success("🟢 Ollama est en ligne", icon="✅")
+        logger.info(f"Ollama est en ligne (v{ver if ver else 'inconnue'})")
     else:
-        st.error("🔴 Ollama est hors ligne", icon="⚠️")
-        st.caption("Lancez Ollama sur votre machine pour utiliser les modèles (Local).")
+        logger.warning("Ollama est hors ligne. Lancez Ollama sur votre machine pour utiliser les modèles (Local/dev).")
 
     # --- SÉLECTION DES MOTEURS IA ---
+    st.subheader("🔬 Configuration IA")
     st.selectbox("🔬 Analyse du CV", 
-                 ["Gemini 3.5", "Gemini 2.5", "Groq / Llama 3.3", "Llama 3.2 (Local)", "Llama 3.2 Vision (Local)"], 
+                 ["Gemini 3.5", "Gemini 2.5", "Groq / Llama 3.3", "Llama 3.2 (Local/dev)", "Llama 3.2 Vision (Local/dev)"], 
                  index=2, key='analysis_engine',
                  help="Llama 3.3 via Groq est ultra-rapide et gratuit.")
     
     st.selectbox("⚖️ Tri & Rédaction", 
-                 ["Gemini 3.5", "Gemini 2.5", "Groq / Llama 3.3", "Llama 3.2 (Local)", "Qwen 3 4B (Local)"], 
+                 ["Gemini 3.5", "Gemini 2.5", "Groq / Llama 3.3", "Llama 3.2 (Local/dev)", "Qwen 3 4B (Local/dev)"], 
                  index=2, key='ranking_engine',
                  help="Choisissez le moteur pour le classement des offres et les lettres.")
 
