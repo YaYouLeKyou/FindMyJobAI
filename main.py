@@ -912,41 +912,41 @@ with st.sidebar:
             # Vous pouvez définir GOOGLE_REDIRECT_URI dans vos secrets en prod (ex: https://votre-app.streamlit.app)
             redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8501")
             
-        google_secrets = {
-            "web": {
-                "client_id": google_client_id,
-                "client_secret": google_client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            google_secrets = {
+                "web": {
+                    "client_id": google_client_id,
+                    "client_secret": google_client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
                     "redirect_uris": [redirect_uri]
+                }
             }
-        }
-        with open("client_secrets.json", "w") as f:
-            json.dump(google_secrets, f)
+            with open("client_secrets.json", "w") as f:
+                json.dump(google_secrets, f)
 
-        authenticator = Authenticate(
-            secret_credentials_path="client_secrets.json",
-            cookie_name="google_auth_session",
-            cookie_key="super_secret_cookie_key",
-            redirect_uri="http://localhost:8501"
-        )
-        
-        authenticator.check_authentification()
-        
-        if st.session_state.get('connected', False):
-            user_info = st.session_state.get('user_info', {})
-            col_img, col_txt = st.columns([1, 3])
-            if user_info.get('picture'):
-                col_img.image(user_info['picture'], width=45)
-            col_txt.write(f"Bonjour, {user_info.get('name', 'Utilisateur')}")
+            authenticator = Authenticate(
+                secret_credentials_path="client_secrets.json",
+                cookie_name="google_auth_session",
+                cookie_key="super_secret_cookie_key",
+                redirect_uri=redirect_uri
+            )
             
-            if st.button("Se déconnecter", use_container_width=True):
-                authenticator.logout()
-                st.rerun()
-        else:
-            st.info("Connectez-vous pour sauvegarder votre profil.")
-            authenticator.login()
+            authenticator.check_authentification()
+            
+            if st.session_state.get('connected', False):
+                user_info = st.session_state.get('user_info', {})
+                col_img, col_txt = st.columns([1, 3])
+                if user_info.get('picture'):
+                    col_img.image(user_info['picture'], width=45)
+                col_txt.write(f"Bonjour, {user_info.get('name', 'Utilisateur')}")
+                
+                if st.button("Se déconnecter", use_container_width=True):
+                    authenticator.logout()
+                    st.rerun()
+            else:
+                st.info("Connectez-vous pour sauvegarder votre profil.")
+                authenticator.login()
     else:
         st.sidebar.error("📦 Bibliothèque 'streamlit-google-auth' manquante. Vérifiez votre requirements.txt.")
         
