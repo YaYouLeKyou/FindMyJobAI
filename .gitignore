@@ -1,7 +1,7 @@
-# Environnement et clés
 .env
-
-# Python
+client_secrets.json
 __pycache__/
+.pytest_cache/
+.streamlit/config.toml
 *.py[cod]
-.virtualenv/
+virtualenv/

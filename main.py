@@ -15,10 +15,22 @@ import re
 import concurrent.futures
 import logging
 
+# Force OAUTHLIB to allow insecure transport for local development (http)
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+# Configuration de la page Streamlit (Doit être la TOUTE PREMIÈRE commande)
+st.set_page_config(page_title="Find me a job AI", page_icon="🚀", layout="wide")
+
+# Tentative d'import pour l'authentification Google
+try:
+    from streamlit_google_auth import Authenticate
+    HAS_GOOGLE_AUTH = True
+except ImportError:
+    HAS_GOOGLE_AUTH = False
+
 # --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
 # --- INTERNATIONALIZATION (i18n) ---
 LANGS = {
     "Français": {"code": "fr", "label": "français", "default_loc": "Paris, France"},
@@ -33,7 +45,7 @@ LANGS = {
 STRINGS = {
     "fr": {
         "title": "🚀 Find me a job AI", "subtitle": "Trouvez votre prochain emploi avec l'aide de l'IA", "analyze": "Analyse du document...", "search": "Rechercher", "profile": "📋 Mon Profil",
-        "settings": "⚙️ Paramètres", "num_ads": "Nombre d'annonces", "contract": "Type de contrat", "location": "📍 Ville / Pays", "remote": "Télétravail uniquement", "upload": "📂 Déposez votre CV (PDF)",
+        "settings": "⚙️ Paramètres", "num_ads": "Nombre d'annonces", "contract": "Type de contrat", "location": "📍 Ville / Pays", "remote": "Télétravail uniquement", "upload": "📂 Glissez-déposez votre CV ici (PDF)",
         "analyze_success": "Analyse réussie !", "analyze_fail": "Impossible d'extraire du texte de ce PDF.", "metier": "Métier", "exp": "Expérience", "advice": "✨ Conseils d'amélioration",
         "pistes": "💡 Pistes d'évolution", "alt": "🔀 Métiers Alternatifs", "search_section": "🔍 Recherche d'opportunités", "search_info": "Modifiez l'intitulé ci-dessous pour lancer une recherche personnalisée.",
         "search_placeholder": "Ex: Développeur Python, Serveur...", "scan_state": "📊 État du Scan Global", "direct_access": "🚀 Accès Direct", "no_results": "⚠️ Aucune offre trouvée.", "footer": "Propulsé par Streamlit, Groq & Llama 3",
@@ -44,7 +56,7 @@ STRINGS = {
     },
     "en": {
         "title": "🚀 Find me a job AI", "subtitle": "Find your next job with AI assistance", "analyze": "Analyzing document...", "search": "Search", "profile": "📋 My Profile",
-        "settings": "⚙️ Settings", "num_ads": "Number of ads", "contract": "Contract type", "location": "📍 City / Country", "remote": "Remote only", "upload": "📂 Drop your CV (PDF)",
+        "settings": "⚙️ Settings", "num_ads": "Number of ads", "contract": "Contract type", "location": "📍 City / Country", "remote": "Remote only", "upload": "📂 Drag and drop your CV here (PDF)",
         "analyze_success": "Analysis successful!", "analyze_fail": "Could not extract text from this PDF.", "metier": "Job", "exp": "Experience", "advice": "✨ Improvement Tips",
         "pistes": "💡 Career Paths", "alt": "🔀 Alternative Careers", "search_section": "🔍 Opportunity Search", "search_info": "Modify the title below to start a personalized search.",
         "search_placeholder": "E.g.: Python Developer, Waiter...", "scan_state": "📊 Global Scan Status", "direct_access": "🚀 Direct Access", "no_results": "⚠️ No offers found.", "footer": "",
@@ -55,7 +67,7 @@ STRINGS = {
     },
     "es": {
         "title": "🚀 Find me a job AI", "subtitle": "Encuentra tu próximo empleo con IA", "analyze": "Analizando documento...", "search": "Buscar", "profile": "📋 Mi Perfil",
-        "settings": "⚙️ Ajustes", "num_ads": "Número de anuncios", "contract": "Tipo de contrato", "location": "📍 Ciudad / País", "remote": "Solo teletrabajo", "upload": "📂 Sube tu CV (PDF)",
+        "settings": "⚙️ Ajustes", "num_ads": "Número de anuncios", "contract": "Tipo de contrato", "location": "📍 Ciudad / País", "remote": "Solo teletrabajo", "upload": "📂 Arrastra y suelta tu CV aquí (PDF)",
         "analyze_success": "¡Análisis exitoso!", "analyze_fail": "No se pudo extraer texto de este PDF.", "metier": "Oficio", "exp": "Experiencia", "advice": "✨ Consejos de mejora",
         "pistes": "💡 Trayectorias profesionales", "alt": "🔀 Carreras alternativas", "search_section": "🔍 Búsqueda de oportunidades", "search_info": "Modifica el título a continuación para iniciar una búsqueda personalizada.",
         "search_placeholder": "Ej: Desarrollador Python, Camarero...", "search_placeholder": "Ej: Desarrollador Python, Camarero...", "scan_state": "📊 Estado del escaneo global", "direct_access": "🚀 Acceso directo", "no_results": "⚠️ No se encontraron ofertas.", "footer": "",
@@ -66,7 +78,7 @@ STRINGS = {
     },
     "de": {
         "title": "🚀 Find me a job AI", "subtitle": "Finden Sie Ihren nächsten Job mit KI", "analyze": "Analysiere Dokument...", "search": "Suchen", "profile": "📋 Mein Profil",
-        "settings": "⚙️ Einstellungen", "num_ads": "Anzahl der Anzeigen", "contract": "Vertragstyp", "location": "📍 Stadt / Land", "remote": "Nur Homeoffice", "upload": "📂 CV hochladen (PDF)",
+        "settings": "⚙️ Einstellungen", "num_ads": "Anzahl der Anzeigen", "contract": "Vertragstyp", "location": "📍 Stadt / Land", "remote": "Nur Homeoffice", "upload": "📂 Lebenslauf hierher ziehen (PDF)",
         "analyze_success": "Analyse erfolgreich!", "analyze_fail": "Text konnte nicht aus dieser PDF extrahiert werden.", "metier": "Beruf", "exp": "Erfahrung", "advice": "✨ Verbesserungstipps",
         "pistes": "💡 Karrierewege", "alt": "🔀 Alternative Karrieren", "search_section": "🔍 Chancensuche", "search_info": "Ändern Sie den Titel unten, um eine personalisierte Suche zu starten.",
         "search_placeholder": "Z.B.: Python-Entwickler, Kellner...", "scan_state": "📊 Globaler Scan-Status", "direct_access": "🚀 Direktzugriff", "no_results": "⚠️ Keine Angebote gefunden.", "footer": "",
@@ -77,7 +89,7 @@ STRINGS = {
     },
     "ar": {
         "title": "🚀 Find me a job AI", "subtitle": "ابحث عن وظيفتك القادمة بمساعدة الذكاء الاصطناعي", "analyze": "تحليل المستند...", "search": "بحث", "profile": "📋 ملفي الشخصي",
-        "settings": "⚙️ الإعدادات", "num_ads": "عدد الإعلانات", "contract": "نوع العقد", "location": "📍 المدينة / الدولة", "remote": "عمل عن بعد فقط", "upload": "📂 ارفع سيرتك الذاتية (PDF)",
+        "settings": "⚙️ الإعدادات", "num_ads": "عدد الإعلانات", "contract": "نوع العقد", "location": "📍 المدينة / الدولة", "remote": "عمل عن بعد فقط", "upload": "📂 قم بسحب وإفلات سيرتك الذاتية هنا (PDF)",
         "analyze_success": "نجح التحليل!", "analyze_fail": "تعذر استخراج النص من ملف PDF هذا.", "metier": "الوظيفة", "exp": "الخبرة", "advice": "✨ نصائح للتحسين",
         "pistes": "💡 المسارات الوظيفية", "alt": "🔀 وظائف بديلة", "search_section": "🔍 البحث عن فرص", "search_info": "قم بتعديل المسمى الوظيفي أدناه لبدء بحث مخصص.",
         "search_placeholder": "مثال: مطور بايثون، نادل...", "scan_state": "📊 حالة الفحص الشامل", "direct_access": "🚀 وصول مباشر", "no_results": "⚠️ لم يتم العثور على عروض.", "footer": "",
@@ -88,7 +100,7 @@ STRINGS = {
     },
     "ja": {
         "title": "🚀 Find me a job AI", "subtitle": "AIの力で次の仕事を見つける", "analyze": "分析中...", "search": "検索", "profile": "📋 プロフィール",
-        "settings": "⚙️ 設定", "num_ads": "表示件数", "contract": "雇用形態", "location": "📍 市区町村 / 国", "remote": "リモートのみ", "upload": "📂 CVをアップロード (PDF)",
+        "settings": "⚙️ 設定", "num_ads": "表示件数", "contract": "雇用形態", "location": "📍 市区町村 / 国", "remote": "リモートのみ", "upload": "📂 ここにCVをドラッグ＆ドロップ (PDF)",
         "analyze_success": "分析に成功しました！", "analyze_fail": "PDFからテキストを抽出できませんでした。", "metier": "職種", "exp": "経験", "advice": "✨ 改善のヒント",
         "pistes": "💡 キャリアパス", "alt": "🔀 代替の職業", "search_section": "🔍 求人検索", "search_info": "以下のタイトルを変更して、パーソナライズされた検索を開始します。",
         "search_placeholder": "例：Pythonエンジニア、ウェイター...", "scan_state": "📊 全体スキャンステータス", "direct_access": "🚀 ダイレクトアクセス", "no_results": "⚠️ 求人が見つかりませんでした。", "footer": "",
@@ -99,7 +111,7 @@ STRINGS = {
     },
     "zh": {
         "title": "🚀 Find me a job AI", "subtitle": "利用 AI 找到你的下一份工作", "analyze": "分析中...", "search": "搜索", "profile": "📋 我的档案",
-        "settings": "⚙️ 设置", "num_ads": "显示数量", "contract": "合同类型", "location": "📍 城市 / 国家", "remote": "仅远程", "upload": "📂 上传简历 (PDF)",
+        "settings": "⚙️ 设置", "num_ads": "显示数量", "contract": "合同类型", "location": "📍 城市 / 国家", "remote": "仅远程", "upload": "📂 在此处拖放您的简历 (PDF)",
         "analyze_success": "分析成功！", "analyze_fail": "无法从此 PDF 中提取文本。", "metier": "职业", "exp": "经验", "advice": "✨ 改进建议",
         "pistes": "💡 职业路径", "alt": "🔀 替代职业", "search_section": "🔍 机会搜索", "search_info": "修改下方标题以启动个性化搜索。",
         "search_placeholder": "例如：Python 开发人员、服务员...", "scan_state": "📊 全球扫描状态", "direct_access": "🚀 直接访问", "no_results": "⚠️ 未找到职位。", "footer": "",
@@ -124,8 +136,9 @@ serpapi_key = os.getenv("SERPAPI_KEY", "").strip()
 jooble_api_key = os.getenv("JOOBLE_API_KEY", "").strip()
 apify_api_key = os.getenv("APIFY_API_KEY", "").strip()
 
-if not api_key:
-    st.error("⚠️ Clé API GROQ non trouvée. Veuillez vérifier votre fichier .env")
+# Configuration Google OAuth
+google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
 # Diagnostic de la clé Groq (Console)
 if api_key:
@@ -137,16 +150,16 @@ if api_key:
 if gemini_api_key:
     try:
         genai.configure(api_key=gemini_api_key)
-        # Test rapide de la clé sans générer de token (list_models est peu coûteux)
-        genai.list_models()
-        logger.info("✅ Gemini API configurée et validée")
     except Exception as e:
         logger.error(f"❌ Erreur de configuration Gemini : {e}")
-        gemini_api_key = None # On invalide pour éviter les crashs
 else:
     logger.warning("⚠️ Aucune clé Gemini API trouvée dans .env")
 
-client = Groq(api_key=api_key) if api_key else None
+if api_key:
+    client = Groq(api_key=api_key)
+else:
+    client = None
+    st.error("⚠️ Clé API GROQ manquante dans le fichier .env")
 
 def extract_text_from_pdf(file):
     """Extrait le texte d'un fichier PDF de manière sécurisée."""
@@ -223,9 +236,9 @@ def call_local_llama(prompt, model_name, is_json=False):
             error_data = response.json()
             error_msg = error_data.get("error", response.text)
             if "unknown model architecture" in error_msg.lower() or "mllama" in error_msg.lower():
-                st.error("❌ **Erreur d'architecture (mllama)** : Ollama ne reconnaît pas ce modèle. Cela peut arriver si une ancienne version (v0.3.4) tourne encore en arrière-plan ou si le modèle est corrompu. Essayez de supprimer et ré-installer le modèle : `ollama rm llama3.2-vision` puis relancez l'analyse.")
+                logger.error("Erreur d'architecture Ollama")
             else:
-                st.error(f"❌ Erreur Ollama ({response.status_code}) : {error_msg}")
+                logger.error(f"Erreur Ollama : {error_msg}")
             return None
     except Exception as e:
         logger.error(f"Ollama Local Error: {e}")
@@ -233,21 +246,57 @@ def call_local_llama(prompt, model_name, is_json=False):
 
 def call_ai_provider(prompt, selected_model, is_json=False):
     """Fonction centralisée pour appeler Gemini ou Groq."""
+    st.session_state['last_ai_error'] = ""
+    # Priorité à la clé saisie par l'utilisateur dans la sidebar, sinon clé du .env
+    active_gemini_key = st.session_state.get('custom_gemini_key') or gemini_api_key
+
     try:
         if "Gemini" in selected_model:
+            if not active_gemini_key:
+                raise Exception("Clé API Gemini manquante. Veuillez la configurer dans la barre latérale.")
+
+            genai.configure(api_key=active_gemini_key)
             # Mapping : 3.5 -> 2.0 Flash (Stable), 2.5 -> 1.5 Flash
             model_id = "models/gemini-2.0-flash" if "3.5" in selected_model else "models/gemini-1.5-flash"
             
-            logger.info(f"Utilisation du modèle Gemini : {model_id}")
+            logger.info(f"Appel Gemini AI : {model_id}")
             model = genai.GenerativeModel(model_id)
             
-            config = {"response_mime_type": "application/json"} if is_json else None
-            response = model.generate_content(prompt, generation_config=config)
+            generation_config = {"response_mime_type": "application/json", "temperature": 0.1} if is_json else {"temperature": 0.7}
+            # On assouplit les filtres de sécurité pour éviter les faux positifs sur les contenus de CV
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ]
             
-            if not response.text:
-                raise Exception("Réponse vide de Gemini (possible blocage de sécurité)")
+            response = model.generate_content(prompt, generation_config=generation_config, safety_settings=safety_settings)
+            
+            try:
+                # Vérification du motif de fin (Safety, etc.)
+                if response.candidates and response.candidates[0].finish_reason != 1: # 1 = STOP (Success)
+                    reason = response.candidates[0].finish_reason
+                    logger.warning(f"Gemini finish_reason inhabituel : {reason}")
+                    if reason == 3: # SAFETY
+                        raise Exception("L'analyse a été bloquée par les filtres de sécurité de Google.")
                 
-            return response.text
+                text = response.text
+            except (ValueError, AttributeError):
+                # Fallback si l'accès à .text est bloqué par la sécurité
+                if response.candidates and len(response.candidates[0].content.parts) > 0:
+                    text = response.candidates[0].content.parts[0].text
+                else:
+                    raise Exception("Gemini a refusé de générer du texte pour ce contenu (Filtre de sécurité).")
+
+            if is_json:
+                # Nettoyage JSON ultra-robuste
+                # On cherche la première { et la dernière } au cas où l'IA ajoute du texte avant/après
+                json_match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
+                if json_match:
+                    text = json_match.group(1)
+                
+            return text
         elif "(Local)" in selected_model:
             # Mapping des noms d'affichage vers les tags Ollama
             # Simplification du mapping local
@@ -293,61 +342,72 @@ def call_ai_provider(prompt, selected_model, is_json=False):
             return response.choices[0].message.content
     except Exception as e:
         err_msg = str(e)
-        if "Gemini" in selected_model:
-            if "API_KEY_INVALID" in err_msg or "403" in err_msg:
-                st.error(f"🔑 **Erreur {selected_model}** : Votre clé API est invalide ou restreinte.")
-            elif "quota" in err_msg.lower() or "429" in err_msg:
-                st.error(f"⏳ **Erreur {selected_model}** : Quota dépassé (Rate Limit). Réessayez dans une minute.")
-            elif "safety" in err_msg.lower():
-                st.error(f"🛡️ **Erreur {selected_model}** : Le contenu a été bloqué par les filtres de sécurité.")
-            elif "not found" in err_msg.lower() or "404" in err_msg:
-                st.error(f"❌ **Erreur {selected_model}** : Modèle non trouvé. Essayez de mettre à jour la bibliothèque ou vérifiez vos quotas sur Google AI Studio.")
-            else:
-                st.error(f"❌ **Erreur {selected_model}** : {err_msg}")
-        else:
-            if "401" in err_msg:
-                st.error("🔑 **Erreur Groq** : Clé API invalide.")
-            else:
-                st.error(f"❌ **Erreur Groq** : {err_msg}")
+        logger.error(f"Erreur AI Provider ({selected_model}): {e}")
+        st.session_state['last_ai_error'] = err_msg
+        return None
         
-        logger.error(f"Détails Erreur {selected_model}: {e}")
-        raise e
 
 def rank_jobs_with_ai(cv_data, jobs, filters, target_lang="français"):
     """Utilise l'IA pour classer les offres par pertinence par rapport au CV et aux filtres."""
     if not jobs or not cv_data:
         return jobs
 
-    selected_model = st.session_state.get('ranking_engine', 'Gemini 3.5')
+    selected_model = st.session_state.get('ranking_engine', 'Groq / Llama 3.3')
     # On limite le tri aux 20 premières offres pour la rapidité
     limit_tri = 20
     jobs_to_rank = jobs[:limit_tri]
     
-    job_list_text = "\n".join([f"ID: {i} | {j['title']} @ {j['company']}" for i, j in enumerate(jobs_to_rank)])
+    # On simplifie le format pour ne laisser aucune place à l'ambiguïté pour l'IA
+    job_list_text = "\n".join([f"{i} | {j['title']} @ {j['company']}" for i, j in enumerate(jobs_to_rank)])
     
     prompt = f"""
-    En tant qu'expert en recrutement, classe ces offres par pertinence décroissante pour ce candidat.
-    TIENS COMPTE DU MÉTIER, DE L'EXPÉRIENCE ET DES FILTRES (Contrat: {filters.get('contrat')}, Remote: {filters.get('remote')}).
+    Tu es un expert en recrutement. Évalue la compatibilité (0 à 100%) entre le profil du candidat et les offres d'emploi suivantes.
+    
+    FILTRES CRITIQUES :
+    - Type de contrat recherché : {filters.get('contrat')}
+    - Télétravail : {'Oui' if filters.get('remote') else 'Non spécifié'}
 
-    PROFIL : {cv_data.get('metier')} ({cv_data.get('annees_experience')} ans d'exp). Compétences: {', '.join(cv_data.get('mots_cles', []))}
-    OFFRES :
+    PROFIL CANDIDAT : {cv_data.get('metier')} ({cv_data.get('annees_experience')} ans d'exp). Compétences clés: {', '.join(cv_data.get('mots_cles', []))}
+    
+    LISTE DES OFFRES (format "index | titre @ entreprise") :
     {job_list_text}
 
-    Réponds uniquement avec un objet JSON contenant une clé "ranking" qui est la liste d'objets : [{{ "id": index, "score": score_0_a_100 }}].
+    INSTRUCTIONS :
+    Retourne UNIQUEMENT un objet JSON avec une clé "ranking" contenant une liste d'objets : 
+    {{"ranking": [{{"id": index_numérique, "score": score_entier_0_a_100}}]}}
+    L'ID doit être uniquement le numéro d'index fourni.
     """
     
     try:
         response_text = call_ai_provider(prompt, selected_model, is_json=True)
+        if not response_text:
+            return jobs
+            
         ranking_data = json.loads(response_text).get("ranking", [])
         
         ranked_list = []
         ranked_indices = []
         for item in ranking_data:
-            idx = item.get("id")
-            if idx is not None and idx < len(jobs_to_rank):
-                job = {**jobs_to_rank[idx], "match_score": item.get("score", 0)}
-                ranked_list.append(job)
-                ranked_indices.append(idx)
+            try:
+                # Conversion explicite en int car certains modèles (Gemini) renvoient souvent des strings "0", "1"...
+                idx_raw = item.get("id")
+                score_raw = item.get("score")
+                
+                # Nettoyage de l'ID au cas où Gemini renverrait "ID: 0" au lieu de 0
+                if isinstance(idx_raw, str):
+                    idx_match = re.search(r'\d+', idx_raw)
+                    if idx_match:
+                        idx_raw = idx_match.group()
+
+                if idx_raw is not None:
+                    idx = int(idx_raw)
+                    score = int(score_raw) if score_raw is not None else 0
+                    if idx < len(jobs_to_rank):
+                        job = {**jobs_to_rank[idx], "match_score": score}
+                        ranked_list.append(job)
+                        ranked_indices.append(idx)
+            except (ValueError, TypeError):
+                continue
 
         # Ajouter les jobs du top 20 qui n'auraient pas été classés par l'IA
         for i in range(len(jobs_to_rank)):
@@ -433,7 +493,7 @@ def clean_job_title(title):
 
 def analyze_cv(text, target_lang="français"):
     """Envoie le texte à Groq et parse la réponse JSON."""
-    selected_model = st.session_state.get('analysis_engine', 'Llama Vision (Local)')
+    selected_model = st.session_state.get('analysis_engine', 'Groq / Llama 3.3')
     prompt = f"""
     Tu es un expert en recrutement. Analyse ce CV et retourne uniquement un objet JSON en {target_lang} avec les clés suivantes :
     "nom_complet", "contact", "metier", "mots_cles" (liste de chaînes), "resume" (maximum 3 lignes), "annees_experience" (nombre entier), "recommandations_metiers" (liste de 5 métiers suggérés), "metiers_alternatifs" (liste de 3 métiers radicalement différents utilisant les mêmes compétences transférables), "suggestions_amelioration" (liste de 3 à 5 conseils concrets pour améliorer l'impact de ce CV).
@@ -449,18 +509,24 @@ def analyze_cv(text, target_lang="français"):
     
     try:
         response_text = call_ai_provider(prompt, selected_model, is_json=True)
+        if not response_text:
+            return None
+            
         return json.loads(response_text)
     except json.JSONDecodeError as je:
         logger.error(f"JSONDecodeError: {je}")
+        if response_text:
+            logger.error(f"Réponse brute ayant échoué : {response_text}")
         return None
-    except Exception:
+    except Exception as e:
+        logger.error(f"Erreur lors de l'analyse du CV : {e}")
         return None
 
 def generate_cover_letter(cv_data, job_title, company, job_description="", target_lang="français"):
     """Génère une lettre de motivation personnalisée via Groq."""
     if not cv_data:
         return None
-    selected_model = st.session_state.get('ranking_engine', 'Gemini 3.5')
+    selected_model = st.session_state.get('ranking_engine', 'Groq / Llama 3.3')
 
     prompt = f"""
     Tu es un expert en recrutement. Rédige une lettre de motivation percutante, professionnelle et personnalisée en {target_lang}.
@@ -547,7 +613,7 @@ def scrape_france_travail_jobs(job_title, limit=10):
         session = requests.Session()
         while len(jobs) < limit and page <= 5:
             url = f"https://candidat.pole-emploi.fr/offres/recherche?motsCles={query}&offresPartenaires=true&page={page}&sort=1"
-            response = session.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=10)
             if response.status_code != 200: break
             
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -559,17 +625,15 @@ def scrape_france_travail_jobs(job_title, limit=10):
             if not items: break
 
             for item in items:
-                if len(jobs) >= limit: break
                 title_elem = item.select_one('h2.media-heading, .t4, .t5, a.titre, .media-heading')
                 company_elem = item.select_one('p.sub-text, .nom-entreprise, span.entreprise')
-                link_elem = item.select_one('a[href*="detail"], a.btn-detail-offre')
                 
                 if title_elem:
-                    href = link_elem['href'] if link_elem else "#"
                     jobs.append({
-                        "titre": title_elem.get_text(strip=True),
-                        "entreprise": company_elem.get_text(strip=True) if company_elem else "Entreprise non précisée",
-                        "lien": "https://candidat.pole-emploi.fr" + href if href.startswith('/') else href
+                        "title": title_elem.get_text(strip=True),
+                        "company": company_elem.get_text(strip=True) if company_elem else "Non précisé",
+                        "link": "https://candidat.pole-emploi.fr" + title_elem.get('href', '#'),
+                        "source": "France Travail"
                     })
             page += 1
             
@@ -578,92 +642,34 @@ def scrape_france_travail_jobs(job_title, limit=10):
         logger.error(f"Erreur lors du scraping France Travail : {e}")
         return jobs
 
-def chercher_offres_jobspy(metier, contrat_label, remote_only, location="France, FR", num_results=5, experience=None, selected_sources=None):
-    """Recherche des offres via JobSpy sur plusieurs plateformes."""
-    # Mapping des types de contrat pour JobSpy
-    job_type_map = {"CDI": "fulltime", "CDD": "contract", "Interim": "temporary"}
-    
-    clean_metier = clean_job_title(metier)
-    if not clean_metier:
-        clean_metier = metier
-
-    # Mapping UI -> JobSpy
-    ui_to_js = {
-        "Indeed": "indeed", "LinkedIn": "linkedin", "Google Jobs": "google", 
-        "Glassdoor": "glassdoor", "ZipRecruiter": "zip_recruiter", 
-        "Simplyhired": "simplyhired", "Careerbuilder": "careerbuilder", "Monster": "monster"
-    }
-    
-    if selected_sources:
-        sites_to_try = [ui_to_js[s] for s in selected_sources if s in ui_to_js]
-    else:
-        sites_to_try = list(ui_to_js.values())
-
-    if not sites_to_try:
-        return pd.DataFrame()
-
-    all_results = pd.DataFrame()
-
-    for site in sites_to_try:
-        try:
-            time.sleep(1)  # Délai pour réduire les risques de bannissement IP
-            search_location = location if location else "France"
-            
-            # Configuration de base
-            search_params = {
-                "site_name": [site],
-                "search_term": clean_metier,
-                "location": search_location,
-                "results_wanted": num_results,
-                "hours_old": 720,
-                "job_type": job_type_map.get(contrat_label),
-                "is_remote": remote_only,
-                "enforce_desktop": True
-            }
-
-            if site == "indeed":
-                search_params["country_indeed"] = "france"
-            elif site == "linkedin":
-                search_params["linkedin_fetch_full_description"] = False
-                if "," in search_location: search_params["location"] = search_location.split(",")[0]
-            elif site in ["google", "glassdoor", "zip_recruiter", "simplyhired"]:
-                # Ces sites préfèrent souvent "France" tout court plutôt que "France, FR"
-                if "France" in search_location: search_params["location"] = "France"
-            
-            results = scrape_jobs(**search_params)
-            
-            # Fallback 1 : On retire le filtre de type de contrat
-            if (results is None or results.empty) and "job_type" in search_params:
-                search_params.pop("job_type")
-                results = scrape_jobs(**search_params)
-            
-            # Fallback 2 : On retire la limite temporelle
-            if (results is None or results.empty) and "hours_old" in search_params:
-                search_params.pop("hours_old")
-                results = scrape_jobs(**search_params)
-
-            # Fallback 3 : Recherche ultra-simplifiée (Titre brut)
-            if (results is None or results.empty):
-                search_params["search_term"] = metier # On utilise le titre non nettoyé
-                # On garde results_wanted tel quel pour avoir un maximum de retours
-                results = scrape_jobs(**search_params)
-
-            if results is not None and not results.empty:
-                all_results = pd.concat([all_results, results], ignore_index=True)
-                
-            # On continue la boucle pour interroger toutes les sources et remplir le dashboard, 
-            # sauf si on a vraiment un volume massif d'offres (ex: 3x le demandé)
-            if len(all_results) >= num_results * 3:
-                break
-
-        except Exception:
-            # On ignore l'erreur spécifique à un site pour ne pas bloquer les autres
-            continue
-            
-    if all_results.empty:
-        st.info("💡 Note : Les plateformes externes (LinkedIn, Indeed...) bloquent souvent les requêtes automatiques. Privilégiez France Travail ou les liens d'accès direct.")
+def chercher_offres_jobspy(job_title, location="Paris, France", limit=10):
+    """Effectue une recherche via la bibliothèque jobspy."""
+    try:
+        clean_title = clean_job_title(job_title)
+        jobs_df = scrape_jobs(
+            site_name=["indeed", "linkedin", "zip_recruiter", "glassdoor"],
+            search_term=clean_title,
+            location=location,
+            results_per_site=limit,
+            hours_old=72
+        )
         
-    return all_results
+        results = []
+        if not jobs_df.empty:
+            for _, row in jobs_df.iterrows():
+                results.append({
+                    "title": row.get("title", "Sans titre"),
+                    "company": row.get("company", "Entreprise anonyme"),
+                    "job_url": row.get("job_url", "#"),
+                    "site": row.get("site", "Jobspy"),
+                    "date_posted": row.get("date_posted"),
+                    "location": row.get("location"),
+                    "description": row.get("description")
+                })
+        return results
+    except Exception as e:
+        logger.error(f"Erreur Jobspy: {e}")
+        return []
 
 def get_france_travail_token():
     """Récupère le token OAuth2 pour l'API France Travail."""
@@ -857,8 +863,10 @@ def render_job_card(title, company, link, source, job_id, description="", match_
             st.caption(f"🏷️ Source : **{source}**")
         
         btn_c1, btn_c2 = st.columns(2)
+        # On s'assure que le lien est une chaîne de caractères valide pour st.link_button
+        safe_link = str(link) if link and not (isinstance(link, float) and pd.isna(link)) else "#"
         with btn_c1:
-            st.link_button("🌐 Voir l'offre", link, use_container_width=True)
+            st.link_button("🌐 Voir l'offre", safe_link, use_container_width=True)
         with btn_c2:
             expander = st.expander("📝 Lettre")
         
@@ -888,41 +896,48 @@ def display_api_jobs(job_list, source_name):
         job_id = f"{source_tag}_{i}_{hash(ad['lien'])}"
         render_job_card(ad['titre'], ad['entreprise'], ad['lien'], ad.get('source', source_name), job_id)
 
-# --- INTERFACE STREAMLIT ---
-st.set_page_config(page_title="Find me a job AI", page_icon="🚀", layout="centered")
-
-# --- STYLE CSS PERSONNALISÉ ---
-st.markdown("""
-    <style>
-    /* Amélioration globale */
-    .main { background-color: #f9fafb; }
-    .stButton button {
-        border-radius: 10px;
-        font-weight: 600;
-        transition: all 0.2s;
-    }
-    .stButton button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    /* Style des cartes */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 16px !important;
-        border: 1px solid #edf2f7 !important;
-        background-color: white !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
-    }
-    /* Optimisation Mobile */
-    @media (max-width: 640px) {
-        .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-        h1 { font-size: 1.8rem !important; }
-        .stMarkdown div p { font-size: 0.95rem; }
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # --- SIDEBAR CONFIGURATION (Language first) ---
 with st.sidebar:
+    # --- GESTION DE L'AUTHENTIFICATION GOOGLE ---
+    if HAS_GOOGLE_AUTH and google_client_id and google_client_secret:
+        google_secrets = {
+            "web": {
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "redirect_uris": ["http://localhost:8501"]
+            }
+        }
+        with open("client_secrets.json", "w") as f:
+            json.dump(google_secrets, f)
+
+        authenticator = Authenticate(
+            secret_credentials_path="client_secrets.json",
+            cookie_name="google_auth_session",
+            cookie_key="super_secret_cookie_key",
+            redirect_uri="http://localhost:8501"
+        )
+        
+        authenticator.check_authentification()
+        
+        if st.session_state.get('connected', False):
+            user_info = st.session_state.get('user_info', {})
+            col_img, col_txt = st.columns([1, 3])
+            if user_info.get('picture'):
+                col_img.image(user_info['picture'], width=45)
+            col_txt.write(f"Bonjour, {user_info.get('name', 'Utilisateur')}")
+            
+            if st.button("Se déconnecter", use_container_width=True):
+                authenticator.logout()
+                st.rerun()
+        else:
+            st.info("Connectez-vous pour sauvegarder votre profil.")
+            authenticator.login()
+        
+        st.divider()
+
     lang_choice = st.selectbox("🌐 Langue / Language", list(LANGS.keys()), index=0)
     lang_data = LANGS[lang_choice]
     st.session_state['lang_code'] = lang_data['code']
@@ -975,45 +990,25 @@ with st.sidebar:
 
     # --- SÉLECTION DES MOTEURS IA ---
     st.selectbox("🔬 Analyse du CV", 
-                 ["Llama 3.2 (Local)", "Llama 3.2 Vision (Local)", "Grok", "Gemini 3.5", "Gemini 2.5"], 
-                 index=0, key='analysis_engine',
-                 help="Llama 3.2 (Local) est compatible avec les anciennes versions d'Ollama.")
+                 ["Gemini 3.5", "Gemini 2.5", "Groq / Llama 3.3", "Llama 3.2 (Local)", "Llama 3.2 Vision (Local)"], 
+                 index=2, key='analysis_engine',
+                 help="Llama 3.3 via Groq est ultra-rapide et gratuit.")
     
     st.selectbox("⚖️ Tri & Rédaction", 
-                 ["Gemini 3.5", "Gemini 2.5", "Grok", "Llama 3.2 (Local)", "Qwen 3 4B (Local)"], 
-                 index=0, key='ranking_engine',
+                 ["Gemini 3.5", "Gemini 2.5", "Groq / Llama 3.3", "Llama 3.2 (Local)", "Qwen 3 4B (Local)"], 
+                 index=2, key='ranking_engine',
                  help="Choisissez le moteur pour le classement des offres et les lettres.")
 
-    # --- Rendu des Filtres ---
-    num_ads = st.slider(S['num_ads'], min_value=1, max_value=50, value=10)
-    contrat = st.selectbox(S['contract'], ["CDI", "CDD", "Interim"])
-    remote = st.checkbox(S['remote'])
+    is_logged_in = st.session_state.get('connected', False)
+    st.text_input("🔑 Clé API Gemini personnelle", 
+                  type="password", 
+                  key="custom_gemini_key",
+                  help="Utilisez votre propre clé de Google AI Studio pour éviter les limites de quota partagées." + 
+                       (" (Mémorisée pour votre session Google)" if is_logged_in else ""))
     
-    global_search = False
-    if remote:
-        global_search = st.checkbox(S['global_search'], value=False)
-
-    if global_search:
-        ville = ""
-        st.caption(f"🌐 {S['global_search']}")
-    else:
-        ville = st.text_input(S['location'], value=st.session_state['user_location'])
-        st.session_state['user_location'] = ville
-        
-    st.divider()
-    sort_option = st.selectbox(S['sort_by'], [S['sort_relevant'], S['sort_recent'], S['sort_closest']])
-
-    st.divider()
-    st.subheader(S.get('select_sources', "📡 Sources"))
-    all_available_sources = ["LinkedIn", "Indeed", "France Travail", "Google Jobs", "Adzuna", "Jooble", "Glassdoor", "ZipRecruiter", "Simplyhired", "Careerbuilder", "Monster"]
-    selected_sources = []
-    for source in all_available_sources:
-        if st.checkbox(source, value=True, key=f"sidebar_src_{source}"):
-            selected_sources.append(source)
-            
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button(S.get('relaunch', 'Refresh'), key="sidebar_relaunch", use_container_width=True):
-        st.rerun()
+    if is_logged_in:
+        st.caption("✅ Votre clé est sauvegardée pour cette session Google.")
+    st.caption("ℹ️ [Obtenir une clé API gratuite ici](https://aistudio.google.com/app/apikey)")
 
 # --- MAIN UI ---
 st.title(S['title'])
@@ -1025,7 +1020,7 @@ if 'search_query' not in st.session_state:
 if 'excluded_sources' not in st.session_state:
     st.session_state['excluded_sources'] = set()
 
-uploaded_file = st.file_uploader(S['upload'], type="pdf")
+uploaded_file = st.file_uploader(S['upload'], type=["pdf"], help="Glissez votre fichier PDF directement dans cette zone.")
 
 if uploaded_file is not None:
     # On crée un identifiant unique pour le fichier pour éviter de re-analyser inutilement
@@ -1044,6 +1039,17 @@ if uploaded_file is not None:
                     st.session_state['last_processed_file'] = file_id
                     st.success(S['analyze_success'])
                     st.divider()
+                else:
+                    last_err = st.session_state.get('last_ai_error', "")
+                    engine = st.session_state.get('analysis_engine')
+                    if "429" in last_err or "quota" in last_err.lower():
+                        st.error("🛑 **Quota Gemini épuisé** (limite de l'offre gratuite). Veuillez patienter 60 secondes ou passez sur 'Groq / Llama 3.3'.")
+                    elif "sécurité" in last_err or "safety" in last_err.lower():
+                        st.error("🛡️ **Filtre de sécurité** : Google a refusé d'analyser ce contenu. Essayez avec Groq.")
+                    elif engine and "Groq" in engine:
+                        st.error("❌ **Problème Groq / Llama 3.3** : Le moteur est indisponible. Veuillez sélectionner **Gemini 3.5** dans la barre latérale pour analyser votre CV.")
+                    else:
+                        st.error(f"❌ L'analyse avec {engine} a échoué. Vérifiez vos logs ou essayez avec Groq.")
             else:
                 st.error("⚠️ Impossible d'extraire du texte. Si c'est un scan (photo), l'IA ne pourra pas le lire sans OCR.")
 
@@ -1092,6 +1098,38 @@ if 'user_cv_data' in st.session_state:
 st.divider()
 st.subheader(S['search_section'])
 st.info(S['search_info'])
+
+# --- FILTRES DE RECHERCHE INTÉGRÉS ---
+with st.container(border=True):
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        num_ads = st.slider(S['num_ads'], min_value=1, max_value=50, value=10)
+        sort_option = st.selectbox(S['sort_by'], [S['sort_relevant'], S['sort_recent'], S['sort_closest']])
+    with col_f2:
+        contrat = st.selectbox(S['contract'], ["CDI", "CDD", "Alternance", "Stage", "Interim"])
+        remote = st.checkbox(S['remote'])
+        global_search = False
+        if remote:
+            global_search = st.checkbox(S['global_search'], value=False)
+    with col_f3:
+        if global_search:
+            ville = ""
+            st.caption(f"🌐 {S['global_search']}")
+        else:
+            ville = st.text_input(S['location'], value=st.session_state['user_location'])
+            st.session_state['user_location'] = ville
+    
+    st.markdown(f"**{S.get('select_sources', '📡 Sources')}**")
+    all_available_sources = ["LinkedIn", "Indeed", "France Travail", "Google Jobs", "Adzuna", "Jooble", "Glassdoor", "ZipRecruiter", "Simplyhired", "Careerbuilder", "Monster"]
+    selected_sources = []
+    # Affichage des sources sur 4 colonnes pour la compacité
+    src_cols = st.columns(4)
+    for i, source in enumerate(all_available_sources):
+        if src_cols[i % 4].checkbox(source, value=True, key=f"main_src_{source}"):
+            selected_sources.append(source)
+    
+    if st.button(S.get('relaunch', 'Refresh'), key="main_relaunch", use_container_width=True):
+        st.rerun()
 
 # Préparation des options de recherche (Métier principal + Recommandations)
 search_options = []
@@ -1152,7 +1190,7 @@ if launch_search and manual_query:
             # On prépare les appels conditionnels
             js_sites = ["Indeed", "LinkedIn", "Google Jobs", "Glassdoor", "ZipRecruiter", "Simplyhired", "Careerbuilder", "Monster"]
             if any(s in selected_sources for s in js_sites):
-                futures['jobspy'] = executor.submit(chercher_offres_jobspy, manual_query, contrat, remote, ville_search, num_ads, exp_val, selected_sources)
+                futures['jobspy'] = executor.submit(chercher_offres_jobspy, manual_query, ville_search, num_ads)
             
             if "Adzuna" in selected_sources:
                 futures['adzuna'] = executor.submit(get_adzuna_jobs, manual_query, ville_search, num_ads)
@@ -1167,7 +1205,7 @@ if launch_search and manual_query:
                 futures['apify'] = executor.submit(get_apify_jobs, manual_query, ville_search, num_ads)
 
             # Récupération sécurisée
-            if 'jobspy' in futures: st.session_state['offres'] = futures['jobspy'].result()
+            if 'jobspy' in futures: st.session_state['offres'] = pd.DataFrame(futures['jobspy'].result())
             if 'adzuna' in futures: st.session_state['job_ads_adzuna'] = futures['adzuna'].result()
             if 'serpapi' in futures: st.session_state['job_ads_serpapi'] = futures['serpapi'].result()
             if 'jooble' in futures: st.session_state['job_ads_jooble'] = futures['jooble'].result()
@@ -1224,6 +1262,24 @@ if launch_search and manual_query:
         elif sort_option == S['sort_relevant'] and 'user_cv_data' in st.session_state and all_results:
             filters = {"contrat": contrat, "remote": remote}
             all_results = rank_jobs_with_ai(st.session_state['user_cv_data'], all_results, filters)
+
+        # --- LOGGING DES RÉSULTATS EN CONSOLE ---
+        logger.info("=== RÉSUMÉ DU SCAN DES SOURCES ===")
+        source_counts = {}
+        for res in all_results:
+            src = res.get('source', 'Inconnue')
+            source_counts[src] = source_counts.get(src, 0) + 1
+        
+        # Sources sélectionnées mais vides
+        for src in selected_sources:
+            if src not in source_counts:
+                logger.warning(f"❌ SOURCE SANS RÉSULTAT (OU ÉCHEC) : {src}")
+            else:
+                logger.info(f"✅ SOURCE RÉUSSIE : {src} ({source_counts[src]} offres)")
+        
+        # Cas spécial pour les sources agrégées par JobSpy
+        if 'jobspy' in futures and not st.session_state['offres'].empty:
+            logger.info(f"ℹ️ Détails JobSpy : {st.session_state['offres']['site'].value_counts().to_dict()}")
         
         st.session_state['ranked_results'] = all_results
 

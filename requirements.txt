@@ -8,3 +8,4 @@ python-jobspy
 pandas
 google-generativeai
 lxml
+streamlit-google-auth
