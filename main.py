@@ -137,8 +137,13 @@ jooble_api_key = os.getenv("JOOBLE_API_KEY", "").strip()
 apify_api_key = os.getenv("APIFY_API_KEY", "").strip()
 
 # Configuration Google OAuth
-google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+# Utilisation de st.secrets comme fallback pour le déploiement Streamlit Cloud
+try:
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID") or st.secrets.get("GOOGLE_CLIENT_ID", "")
+    google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET") or st.secrets.get("GOOGLE_CLIENT_SECRET", "")
+except Exception:
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
 # Diagnostic de la clé Groq (Console)
 if api_key:
@@ -899,7 +904,14 @@ def display_api_jobs(job_list, source_name):
 # --- SIDEBAR CONFIGURATION (Language first) ---
 with st.sidebar:
     # --- GESTION DE L'AUTHENTIFICATION GOOGLE ---
-    if HAS_GOOGLE_AUTH and google_client_id and google_client_secret:
+    if HAS_GOOGLE_AUTH:
+        if not (google_client_id and google_client_secret):
+            st.sidebar.warning("🔑 Google OAuth : Variables client_id ou secret manquantes dans les paramètres de déploiement.")
+        else:
+            # Détecter dynamiquement l'URL pour la redirection (Local vs Prod)
+            # Vous pouvez définir GOOGLE_REDIRECT_URI dans vos secrets en prod (ex: https://votre-app.streamlit.app)
+            redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8501")
+            
         google_secrets = {
             "web": {
                 "client_id": google_client_id,
@@ -907,7 +919,7 @@ with st.sidebar:
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "redirect_uris": ["http://localhost:8501"]
+                    "redirect_uris": [redirect_uri]
             }
         }
         with open("client_secrets.json", "w") as f:
@@ -935,6 +947,8 @@ with st.sidebar:
         else:
             st.info("Connectez-vous pour sauvegarder votre profil.")
             authenticator.login()
+    else:
+        st.sidebar.error("📦 Bibliothèque 'streamlit-google-auth' manquante. Vérifiez votre requirements.txt.")
         
         st.divider()
 
